@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  src: url("/assets/fonts/PlusJakartaSans.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --radius: 0.5rem;
+    /* Page background: warm off-white #FFFAF1 */
+    --background: 0.98 0.015 85;
+    /* Primary text: very dark forest green */
+    --foreground: 0.18 0.06 175;
+    /* Card: pure white for bold contrast on off-white background */
+    --card: 1 0 0;
+    --card-foreground: 0.18 0.06 175;
+    --popover: 1 0 0;
+    --popover-foreground: 0.18 0.06 175;
+    /* Primary accent: deep forest green #245C50 */
+    --primary: 0.38 0.09 175;
+    --primary-foreground: 0.98 0.008 85;
+    /* Warm linen tan #E9D9C2 */
+    --secondary: 0.88 0.035 75;
+    --secondary-foreground: 0.18 0.06 175;
+    --muted: 0.91 0.025 78;
+    /* Medium green-tinted grey */
+    --muted-foreground: 0.45 0.05 175;
+    /* Deep forest green accent */
+    --accent: 0.38 0.09 175;
+    --accent-foreground: 0.98 0.008 85;
+    --destructive: 0.577 0.245 27.325;
+    --destructive-foreground: 0.985 0 0;
+    /* Linen tan border #E9D9C2 */
+    --border: 0.88 0.035 75;
+    --input: 0.88 0.035 75;
+    --ring: 0.38 0.09 175;
+    /* Chart colours: green-anchored palette */
+    --chart-1: 0.38 0.09 175;
+    --chart-2: 0.55 0.08 165;
+    --chart-3: 0.65 0.07 155;
+    --chart-4: 0.72 0.06 145;
+    --chart-5: 0.28 0.07 180;
+    /* Sidebar: follows same palette */
+    --sidebar: 1 0 0;
+    --sidebar-foreground: 0.18 0.06 175;
+    --sidebar-primary: 0.38 0.09 175;
+    --sidebar-primary-foreground: 0.98 0.008 85;
+    --sidebar-accent: 0.88 0.035 75;
+    --sidebar-accent-foreground: 0.18 0.06 175;
+    --sidebar-border: 0.88 0.035 75;
+    --sidebar-ring: 0.38 0.09 175;
+  }
+
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  }
+}
