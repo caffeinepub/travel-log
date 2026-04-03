@@ -48,9 +48,10 @@ function getTodayDate(): string {
   return new Date().toISOString().split("T")[0];
 }
 
-function getMonthStart(): string {
+function getFourWeeksAgo(): string {
   const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split("T")[0];
+  d.setDate(d.getDate() - 28);
+  return d.toISOString().split("T")[0];
 }
 
 function exportCSV(entries: TravelEntry[], from: string, to: string) {
@@ -93,8 +94,8 @@ export default function MainApp() {
   const [distance, setDistance] = useState("");
   const [note, setNote] = useState("");
 
-  // Filter state
-  const [filterFrom, setFilterFrom] = useState(getMonthStart());
+  // Filter state — default start is 4 weeks ago
+  const [filterFrom, setFilterFrom] = useState(getFourWeeksAgo());
   const [filterTo, setFilterTo] = useState(getTodayDate());
 
   // Preset modal state
@@ -245,19 +246,12 @@ export default function MainApp() {
         data-ocid="nav.section"
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center"
-              style={{ background: "oklch(0.38 0.09 175 / 0.12)" }}
-            >
-              <TreePine
-                className="w-4 h-4"
-                style={{ color: "oklch(0.38 0.09 175)" }}
-              />
-            </div>
-            <span className="font-bold text-foreground text-base tracking-tight">
-              Travel Log
-            </span>
+          <div className="flex items-center gap-3">
+            <img
+              src="/assets/img_9735-019d509c-1d55-74d9-a037-285208c6ba13.png"
+              alt="Company Logo"
+              className="h-9 w-auto object-contain"
+            />
           </div>
           <span className="text-xs text-muted-foreground hidden sm:block">
             Wood Care Products — Tax Travel Records
@@ -357,8 +351,8 @@ export default function MainApp() {
 
               {/* Form fields */}
               <div className="space-y-4">
-                {/* Date + Distance row */}
-                <div className="grid grid-cols-2 gap-3">
+                {/* Date + Distance row — stacks on mobile to prevent overlap */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="date" className="text-xs font-medium">
                       Date
@@ -368,7 +362,7 @@ export default function MainApp() {
                       type="date"
                       value={date}
                       onChange={(e) => setDate(e.target.value)}
-                      className="h-9 text-sm"
+                      className="h-9 text-sm w-full"
                       data-ocid="entry.date.input"
                     />
                   </div>
@@ -391,7 +385,7 @@ export default function MainApp() {
                 </div>
 
                 {/* Departure + Destination row */}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="departure" className="text-xs font-medium">
                       Departure

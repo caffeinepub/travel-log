@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Lock, TreePine } from "lucide-react";
+import { Lock } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 
@@ -92,17 +92,13 @@ export default function PasscodeScreen({ onUnlock }: PasscodeScreenProps) {
           className="bg-card rounded-xl shadow-2xl p-10 w-[360px] flex flex-col items-center gap-6"
           data-ocid="passcode.dialog"
         >
-          {/* Logo / icon */}
+          {/* Logo */}
           <div className="flex flex-col items-center gap-2">
-            <div
-              className="w-14 h-14 rounded-full flex items-center justify-center"
-              style={{ background: "oklch(0.38 0.09 175 / 0.12)" }}
-            >
-              <TreePine
-                className="w-7 h-7"
-                style={{ color: "oklch(0.38 0.09 175)" }}
-              />
-            </div>
+            <img
+              src="/assets/img_1602-019d50a2-79bb-725d-85d7-f21ad0b18923.png"
+              alt="Company Logo"
+              className="w-24 h-24 object-contain"
+            />
             <h1 className="text-xl font-bold text-foreground tracking-tight">
               Travel Log
             </h1>
