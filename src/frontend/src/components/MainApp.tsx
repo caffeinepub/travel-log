@@ -22,8 +22,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Bookmark,
+  ClipboardList,
   Download,
   Loader2,
+  PenLine,
   Plus,
   Settings2,
   Trash2,
@@ -32,9 +35,10 @@ import {
 import { motion } from "motion/react";
 import { useState } from "react";
 import { toast } from "sonner";
-import type { backendInterface } from "../backend";
 import type { Preset, TravelEntry } from "../backend.d";
 import { useActor } from "../hooks/useActor";
+
+type MobileTab = "log" | "history" | "presets";
 
 type LocalPreset = {
   id: bigint;
@@ -87,6 +91,9 @@ export default function MainApp() {
   const { actor, isFetching } = useActor();
   const qc = useQueryClient();
 
+  // Mobile tab state
+  const [activeTab, setActiveTab] = useState<MobileTab>("log");
+
   // Form state
   const [date, setDate] = useState(getTodayDate());
   const [departure, setDeparture] = useState("");
@@ -94,12 +101,14 @@ export default function MainApp() {
   const [distance, setDistance] = useState("");
   const [note, setNote] = useState("");
 
-  // Filter state — default start is 4 weeks ago
+  // Filter state
   const [filterFrom, setFilterFrom] = useState(getFourWeeksAgo());
   const [filterTo, setFilterTo] = useState(getTodayDate());
 
-  // Preset modal state
+  // Desktop preset modal state
   const [presetModalOpen, setPresetModalOpen] = useState(false);
+
+  // Preset form state
   const [newPresetName, setNewPresetName] = useState("");
   const [newPresetDeparture, setNewPresetDeparture] = useState("");
   const [newPresetDestination, setNewPresetDestination] = useState("");
@@ -238,9 +247,550 @@ export default function MainApp() {
     newPresetDistance !== "" &&
     Number.parseFloat(newPresetDistance) > 0;
 
+  // ─── Shared sub-sections ─────────────────────────────────────────────────
+
+  const PresetChips = ({ onManage }: { onManage?: () => void }) => (
+    <div className="mb-5">
+      <div className="flex items-center justify-between mb-2">
+        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          Quick Presets
+        </Label>
+        {onManage && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-xs hidden lg:flex"
+            onClick={onManage}
+            data-ocid="presets.open_modal_button"
+          >
+            <Settings2 className="w-3 h-3 mr-1" />
+            Manage
+          </Button>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-2" data-ocid="presets.list">
+        {presets.map((p, i) => (
+          <button
+            type="button"
+            key={p.id.toString()}
+            onClick={() => applyPreset(p)}
+            data-ocid={`presets.item.${i + 1}`}
+            className="px-3 py-1.5 text-xs font-medium rounded-full border transition-all hover:shadow-xs"
+            style={{
+              borderColor: "oklch(0.38 0.09 175 / 0.4)",
+              color: "oklch(0.38 0.09 175)",
+              background: "oklch(0.38 0.09 175 / 0.06)",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background =
+                "oklch(0.38 0.09 175 / 0.14)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background =
+                "oklch(0.38 0.09 175 / 0.06)";
+            }}
+          >
+            {p.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  const LogTripForm = ({
+    showPresetLink = false,
+  }: { showPresetLink?: boolean }) => (
+    <div className="space-y-4">
+      {/* Quick Presets */}
+      {!presetsLoading && presets.length > 0 && (
+        <PresetChips onManage={() => setPresetModalOpen(true)} />
+      )}
+
+      {/* No presets — desktop shows Create button, mobile shows link to presets tab */}
+      {!presetsLoading && presets.length === 0 && (
+        <div className="mb-5 flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">No presets yet</span>
+          {showPresetLink ? (
+            <button
+              type="button"
+              onClick={() => setActiveTab("presets")}
+              className="text-xs font-semibold underline underline-offset-2"
+              style={{ color: "oklch(0.38 0.09 175)" }}
+              data-ocid="presets.tab.link"
+            >
+              + New Preset
+            </button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 px-3 text-xs"
+              onClick={() => setPresetModalOpen(true)}
+              data-ocid="presets.open_modal_button"
+            >
+              <Plus className="w-3 h-3 mr-1" />
+              Create Preset
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* If presets exist on mobile, show link to presets tab */}
+      {showPresetLink && !presetsLoading && presets.length > 0 && (
+        <div className="flex justify-end -mt-3 mb-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab("presets")}
+            className="text-xs font-semibold underline underline-offset-2"
+            style={{ color: "oklch(0.38 0.09 175)" }}
+            data-ocid="presets.tab.link"
+          >
+            + New Preset
+          </button>
+        </div>
+      )}
+
+      {/* Date + Distance — stacked on mobile */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="date" className="text-xs font-medium">
+            Date
+          </Label>
+          <Input
+            id="date"
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="h-9 text-sm w-full"
+            data-ocid="entry.date.input"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="distance" className="text-xs font-medium">
+            Distance (km)
+          </Label>
+          <Input
+            id="distance"
+            type="number"
+            min="0"
+            step="0.1"
+            placeholder="e.g. 18.5"
+            value={distance}
+            onChange={(e) => setDistance(e.target.value)}
+            className="h-9 text-sm"
+            data-ocid="entry.distance.input"
+          />
+        </div>
+      </div>
+
+      {/* Departure + Destination — stacked on mobile */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="departure" className="text-xs font-medium">
+            Departure
+          </Label>
+          <Input
+            id="departure"
+            type="text"
+            placeholder="e.g. Home, Auckland"
+            value={departure}
+            onChange={(e) => setDeparture(e.target.value)}
+            className="h-9 text-sm"
+            data-ocid="entry.departure.input"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="destination" className="text-xs font-medium">
+            Destination
+          </Label>
+          <Input
+            id="destination"
+            type="text"
+            placeholder="e.g. 201 Luckens Rd"
+            value={destination}
+            onChange={(e) => setDestination(e.target.value)}
+            className="h-9 text-sm"
+            data-ocid="entry.destination.input"
+          />
+        </div>
+      </div>
+
+      {/* Note */}
+      <div className="space-y-1.5">
+        <Label htmlFor="note" className="text-xs font-medium">
+          Note{" "}
+          <span className="text-muted-foreground font-normal">(optional)</span>
+        </Label>
+        <Textarea
+          id="note"
+          placeholder="Add a note (optional)"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          className="text-sm resize-none h-20"
+          data-ocid="entry.note.textarea"
+        />
+      </div>
+
+      {/* Submit */}
+      <Button
+        type="button"
+        className="w-full h-11 rounded-full font-semibold text-sm"
+        disabled={!isFormValid || addEntryMutation.isPending || !actor}
+        onClick={() => addEntryMutation.mutate()}
+        data-ocid="entry.submit_button"
+      >
+        {addEntryMutation.isPending ? (
+          <>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Logging...
+          </>
+        ) : (
+          "Log Trip"
+        )}
+      </Button>
+    </div>
+  );
+
+  const HistoryPanel = () => (
+    <div className="bg-card border border-border rounded-lg shadow-card">
+      {/* Card header */}
+      <div className="flex items-center justify-between px-4 py-4 border-b border-border">
+        <div>
+          <h2 className="text-base font-bold text-foreground">Travel Log</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {filteredEntries.length}{" "}
+            {filteredEntries.length === 1 ? "entry" : "entries"} shown
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 px-3 text-xs rounded-full"
+          onClick={() => exportCSV(entries, filterFrom, filterTo)}
+          disabled={filteredEntries.length === 0}
+          data-ocid="log.export.button"
+        >
+          <Download className="w-3 h-3 mr-1.5" />
+          Export CSV
+        </Button>
+      </div>
+
+      {/* Date range filter */}
+      <div className="px-4 py-3 border-b border-border bg-secondary/30">
+        <Label className="text-xs font-medium text-muted-foreground block mb-2">
+          Filter by date
+        </Label>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">From</Label>
+            <Input
+              type="date"
+              value={filterFrom}
+              onChange={(e) => setFilterFrom(e.target.value)}
+              className="h-8 text-xs w-full"
+              data-ocid="log.filter_from.input"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">To</Label>
+            <Input
+              type="date"
+              value={filterTo}
+              onChange={(e) => setFilterTo(e.target.value)}
+              className="h-8 text-xs w-full"
+              data-ocid="log.filter_to.input"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="overflow-auto max-h-[calc(100vh-320px)] lg:max-h-[520px]">
+        {entriesLoading ? (
+          <div className="p-4 space-y-3" data-ocid="log.loading_state">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-10 w-full rounded" />
+            ))}
+          </div>
+        ) : filteredEntries.length === 0 ? (
+          <div
+            className="flex flex-col items-center justify-center py-14 text-center"
+            data-ocid="log.empty_state"
+          >
+            <div
+              className="w-12 h-12 rounded-full flex items-center justify-center mb-3"
+              style={{ background: "oklch(0.88 0.035 75)" }}
+            >
+              <TreePine className="w-6 h-6 text-muted-foreground" />
+            </div>
+            <p className="text-sm font-medium text-foreground">
+              No entries found
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {entries.length === 0
+                ? "Log your first trip using the form."
+                : "Try adjusting the date range filter."}
+            </p>
+          </div>
+        ) : (
+          <table className="w-full text-xs" data-ocid="log.table">
+            <thead>
+              <tr
+                className="border-b border-border"
+                style={{ background: "oklch(0.88 0.035 75)" }}
+              >
+                <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">
+                  Date
+                </th>
+                <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground hidden sm:table-cell">
+                  Departure
+                </th>
+                <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">
+                  Destination
+                </th>
+                <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">
+                  km
+                </th>
+                <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground hidden sm:table-cell">
+                  Note
+                </th>
+                <th className="px-3 py-2.5" />
+              </tr>
+            </thead>
+            <tbody>
+              {filteredEntries.map((entry, i) => (
+                <tr
+                  key={entry.id.toString()}
+                  className="border-b border-border last:border-0 hover:bg-secondary/20 transition-colors"
+                  data-ocid={`log.item.${i + 1}`}
+                >
+                  <td className="px-4 py-3 font-medium text-foreground whitespace-nowrap">
+                    {entry.date}
+                  </td>
+                  <td className="px-3 py-3 text-muted-foreground max-w-[90px] truncate hidden sm:table-cell">
+                    {entry.departure}
+                  </td>
+                  <td className="px-3 py-3 text-muted-foreground max-w-[100px] truncate">
+                    {entry.destination}
+                  </td>
+                  <td className="px-3 py-3 text-right font-medium text-foreground">
+                    {entry.distanceKm.toFixed(1)}
+                  </td>
+                  <td className="px-3 py-3 text-muted-foreground max-w-[100px] truncate hidden sm:table-cell">
+                    {entry.note ?? <span className="italic opacity-50">—</span>}
+                  </td>
+                  <td className="px-3 py-3">
+                    <button
+                      type="button"
+                      onClick={() => setDeleteEntryConfirm(entry.id)}
+                      disabled={deleteEntryMutation.isPending}
+                      data-ocid={`log.delete_button.${i + 1}`}
+                      className="p-1.5 rounded transition-colors text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                      title="Delete entry"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+
+  const PresetsPanel = () => (
+    <div className="space-y-4">
+      {/* Existing presets list */}
+      <div className="bg-card border border-border rounded-lg shadow-card">
+        <div className="px-4 py-4 border-b border-border">
+          <h2 className="text-base font-bold text-foreground">Saved Presets</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Tap a preset on the Log Trip tab to auto-fill the form.
+          </p>
+        </div>
+        <div className="p-4">
+          {presetsLoading ? (
+            <div className="space-y-3" data-ocid="presets.loading_state">
+              {[1, 2].map((i) => (
+                <Skeleton key={i} className="h-14 w-full rounded" />
+              ))}
+            </div>
+          ) : presets.length === 0 ? (
+            <div className="text-center py-6" data-ocid="presets.empty_state">
+              <Bookmark className="w-8 h-8 text-muted-foreground mx-auto mb-2 opacity-40" />
+              <p className="text-sm text-muted-foreground">
+                No presets yet. Create one below.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2" data-ocid="presets.list">
+              {presets.map((p, i) => (
+                <div
+                  key={p.id.toString()}
+                  className="flex items-center justify-between px-3 py-3 rounded-lg border border-border"
+                  style={{ background: "oklch(0.88 0.035 75 / 0.3)" }}
+                  data-ocid={`presets.row.${i + 1}`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-foreground truncate">
+                      {p.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                      {p.departure} → {p.destination} · {p.distanceKm} km
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDeletePresetConfirm(p.id)}
+                    disabled={deletePresetMutation.isPending}
+                    data-ocid={`presets.delete_button.${i + 1}`}
+                    className="ml-3 p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors flex-shrink-0"
+                    title="Delete preset"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Create Preset form — always visible */}
+      <div
+        className="bg-card border-2 rounded-lg shadow-card"
+        style={{ borderColor: "oklch(0.38 0.09 175 / 0.35)" }}
+      >
+        <div
+          className="px-4 py-4 border-b rounded-t-lg"
+          style={{
+            borderColor: "oklch(0.38 0.09 175 / 0.2)",
+            background: "oklch(0.38 0.09 175 / 0.06)",
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <div
+              className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{ background: "oklch(0.38 0.09 175)" }}
+            >
+              <Plus
+                className="w-4 h-4"
+                style={{ color: "oklch(0.98 0.008 85)" }}
+              />
+            </div>
+            <div>
+              <h3
+                className="text-base font-bold"
+                style={{ color: "oklch(0.38 0.09 175)" }}
+              >
+                Create Preset
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Save a route for quick re-use
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4 space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="pname" className="text-xs font-medium">
+              Preset Name
+            </Label>
+            <Input
+              id="pname"
+              placeholder="e.g. West Harbour Delivery"
+              value={newPresetName}
+              onChange={(e) => setNewPresetName(e.target.value)}
+              className="h-10 text-sm"
+              data-ocid="presets.name.input"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="pdep" className="text-xs font-medium">
+                Departure
+              </Label>
+              <Input
+                id="pdep"
+                placeholder="e.g. Home, Auckland"
+                value={newPresetDeparture}
+                onChange={(e) => setNewPresetDeparture(e.target.value)}
+                className="h-10 text-sm"
+                data-ocid="presets.departure.input"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="pdest" className="text-xs font-medium">
+                Destination
+              </Label>
+              <Input
+                id="pdest"
+                placeholder="e.g. 201 Luckens Rd"
+                value={newPresetDestination}
+                onChange={(e) => setNewPresetDestination(e.target.value)}
+                className="h-10 text-sm"
+                data-ocid="presets.destination.input"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="pdist" className="text-xs font-medium">
+              Distance (km)
+            </Label>
+            <Input
+              id="pdist"
+              type="number"
+              min="0"
+              step="0.1"
+              placeholder="e.g. 18.5"
+              value={newPresetDistance}
+              onChange={(e) => setNewPresetDistance(e.target.value)}
+              className="h-10 text-sm"
+              data-ocid="presets.distance.input"
+            />
+          </div>
+
+          <Button
+            type="button"
+            className="w-full h-11 rounded-full font-semibold text-sm mt-1"
+            onClick={() => addPresetMutation.mutate()}
+            disabled={!isPresetValid || addPresetMutation.isPending || !actor}
+            data-ocid="presets.save_button"
+          >
+            {addPresetMutation.isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...
+              </>
+            ) : (
+              "Save Preset"
+            )}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ─── Bottom nav tab helper ────────────────────────────────────────────────
+  const tabItems: { id: MobileTab; label: string; icon: React.ReactNode }[] = [
+    { id: "log", label: "Log Trip", icon: <PenLine className="w-5 h-5" /> },
+    {
+      id: "history",
+      label: "History",
+      icon: <ClipboardList className="w-5 h-5" />,
+    },
+    { id: "presets", label: "Presets", icon: <Bookmark className="w-5 h-5" /> },
+  ];
+
   return (
     <div className="min-h-screen bg-background">
-      {/* Navbar */}
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header
         className="sticky top-0 z-40 w-full border-b border-border bg-card shadow-xs"
         data-ocid="nav.section"
@@ -259,8 +809,52 @@ export default function MainApp() {
         </div>
       </header>
 
-      {/* Main content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* ── Mobile layout: tab content ─────────────────────────────────────── */}
+      <main className="lg:hidden max-w-2xl mx-auto px-4 pt-5 pb-28">
+        {activeTab === "log" && (
+          <motion.div
+            key="log"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+          >
+            <div className="bg-card border border-border rounded-lg shadow-card p-5">
+              <h2 className="text-base font-bold text-foreground mb-1">
+                Log a New Trip
+              </h2>
+              <p className="text-xs text-muted-foreground mb-5">
+                Record a trip for your tax records.
+              </p>
+              <LogTripForm showPresetLink />
+            </div>
+          </motion.div>
+        )}
+
+        {activeTab === "history" && (
+          <motion.div
+            key="history"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+          >
+            <HistoryPanel />
+          </motion.div>
+        )}
+
+        {activeTab === "presets" && (
+          <motion.div
+            key="presets"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+          >
+            <PresetsPanel />
+          </motion.div>
+        )}
+      </main>
+
+      {/* ── Desktop layout: two columns ────────────────────────────────────── */}
+      <main className="hidden lg:block max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
           {/* LEFT: New Entry Form */}
           <motion.div
@@ -275,188 +869,7 @@ export default function MainApp() {
               <p className="text-sm text-muted-foreground mb-5">
                 Record a trip for your tax records.
               </p>
-
-              {/* Quick Presets */}
-              {!presetsLoading && presets.length > 0 && (
-                <div className="mb-5">
-                  <div className="flex items-center justify-between mb-2">
-                    <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                      Quick Presets
-                    </Label>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-2 text-xs"
-                      onClick={() => setPresetModalOpen(true)}
-                      data-ocid="presets.open_modal_button"
-                    >
-                      <Settings2 className="w-3 h-3 mr-1" />
-                      Manage
-                    </Button>
-                  </div>
-                  <div
-                    className="flex flex-wrap gap-2"
-                    data-ocid="presets.list"
-                  >
-                    {presets.map((p, i) => (
-                      <button
-                        type="button"
-                        key={p.id.toString()}
-                        onClick={() => applyPreset(p)}
-                        data-ocid={`presets.item.${i + 1}`}
-                        className="px-3 py-1.5 text-xs font-medium rounded-full border transition-all hover:shadow-xs"
-                        style={{
-                          borderColor: "oklch(0.38 0.09 175 / 0.4)",
-                          color: "oklch(0.38 0.09 175)",
-                          background: "oklch(0.38 0.09 175 / 0.06)",
-                        }}
-                        onMouseEnter={(e) => {
-                          (
-                            e.currentTarget as HTMLButtonElement
-                          ).style.background = "oklch(0.38 0.09 175 / 0.14)";
-                        }}
-                        onMouseLeave={(e) => {
-                          (
-                            e.currentTarget as HTMLButtonElement
-                          ).style.background = "oklch(0.38 0.09 175 / 0.06)";
-                        }}
-                      >
-                        {p.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* If no presets, show manage button alone */}
-              {!presetsLoading && presets.length === 0 && (
-                <div className="mb-5 flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">
-                    No presets yet
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 px-3 text-xs"
-                    onClick={() => setPresetModalOpen(true)}
-                    data-ocid="presets.open_modal_button"
-                  >
-                    <Plus className="w-3 h-3 mr-1" />
-                    Create Preset
-                  </Button>
-                </div>
-              )}
-
-              {/* Form fields */}
-              <div className="space-y-4">
-                {/* Date + Distance row — stacks on mobile to prevent overlap */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="date" className="text-xs font-medium">
-                      Date
-                    </Label>
-                    <Input
-                      id="date"
-                      type="date"
-                      value={date}
-                      onChange={(e) => setDate(e.target.value)}
-                      className="h-9 text-sm w-full"
-                      data-ocid="entry.date.input"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="distance" className="text-xs font-medium">
-                      Distance (km)
-                    </Label>
-                    <Input
-                      id="distance"
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      placeholder="e.g. 18.5"
-                      value={distance}
-                      onChange={(e) => setDistance(e.target.value)}
-                      className="h-9 text-sm"
-                      data-ocid="entry.distance.input"
-                    />
-                  </div>
-                </div>
-
-                {/* Departure + Destination row */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="departure" className="text-xs font-medium">
-                      Departure
-                    </Label>
-                    <Input
-                      id="departure"
-                      type="text"
-                      placeholder="e.g. Home, Auckland"
-                      value={departure}
-                      onChange={(e) => setDeparture(e.target.value)}
-                      className="h-9 text-sm"
-                      data-ocid="entry.departure.input"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label
-                      htmlFor="destination"
-                      className="text-xs font-medium"
-                    >
-                      Destination
-                    </Label>
-                    <Input
-                      id="destination"
-                      type="text"
-                      placeholder="e.g. 201 Luckens Rd"
-                      value={destination}
-                      onChange={(e) => setDestination(e.target.value)}
-                      className="h-9 text-sm"
-                      data-ocid="entry.destination.input"
-                    />
-                  </div>
-                </div>
-
-                {/* Note */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="note" className="text-xs font-medium">
-                    Note{" "}
-                    <span className="text-muted-foreground font-normal">
-                      (optional)
-                    </span>
-                  </Label>
-                  <Textarea
-                    id="note"
-                    placeholder="Add a note (optional)"
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    className="text-sm resize-none h-20"
-                    data-ocid="entry.note.textarea"
-                  />
-                </div>
-
-                {/* Submit */}
-                <Button
-                  type="button"
-                  className="w-full h-10 rounded-full font-semibold text-sm mt-1"
-                  disabled={
-                    !isFormValid || addEntryMutation.isPending || !actor
-                  }
-                  onClick={() => addEntryMutation.mutate()}
-                  data-ocid="entry.submit_button"
-                >
-                  {addEntryMutation.isPending ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />{" "}
-                      Logging...
-                    </>
-                  ) : (
-                    "Log Trip"
-                  )}
-                </Button>
-              </div>
+              <LogTripForm />
             </div>
           </motion.div>
 
@@ -466,160 +879,61 @@ export default function MainApp() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35, ease: "easeOut", delay: 0.08 }}
           >
-            <div className="bg-card border border-border rounded-lg shadow-card">
-              {/* Card header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-                <div>
-                  <h2 className="text-lg font-bold text-foreground">
-                    Your Travel Log
-                  </h2>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {filteredEntries.length}{" "}
-                    {filteredEntries.length === 1 ? "entry" : "entries"} shown
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 px-3 text-xs rounded-full"
-                  onClick={() => exportCSV(entries, filterFrom, filterTo)}
-                  disabled={filteredEntries.length === 0}
-                  data-ocid="log.export.button"
-                >
-                  <Download className="w-3 h-3 mr-1.5" />
-                  Export CSV
-                </Button>
-              </div>
-
-              {/* Date range filter */}
-              <div className="px-6 py-3 border-b border-border bg-secondary/30">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <Label className="text-xs font-medium text-muted-foreground">
-                    Filter:
-                  </Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="date"
-                      value={filterFrom}
-                      onChange={(e) => setFilterFrom(e.target.value)}
-                      className="h-7 text-xs w-36"
-                      data-ocid="log.filter_from.input"
-                    />
-                    <span className="text-xs text-muted-foreground">to</span>
-                    <Input
-                      type="date"
-                      value={filterTo}
-                      onChange={(e) => setFilterTo(e.target.value)}
-                      className="h-7 text-xs w-36"
-                      data-ocid="log.filter_to.input"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Table */}
-              <div className="overflow-auto max-h-[520px]">
-                {entriesLoading ? (
-                  <div className="p-6 space-y-3" data-ocid="log.loading_state">
-                    {[1, 2, 3].map((i) => (
-                      <Skeleton key={i} className="h-10 w-full rounded" />
-                    ))}
-                  </div>
-                ) : filteredEntries.length === 0 ? (
-                  <div
-                    className="flex flex-col items-center justify-center py-16 text-center"
-                    data-ocid="log.empty_state"
-                  >
-                    <div
-                      className="w-12 h-12 rounded-full flex items-center justify-center mb-3"
-                      style={{ background: "oklch(0.88 0.035 75)" }}
-                    >
-                      <TreePine className="w-6 h-6 text-muted-foreground" />
-                    </div>
-                    <p className="text-sm font-medium text-foreground">
-                      No entries found
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {entries.length === 0
-                        ? "Log your first trip using the form."
-                        : "Try adjusting the date range filter."}
-                    </p>
-                  </div>
-                ) : (
-                  <table className="w-full text-xs" data-ocid="log.table">
-                    <thead>
-                      <tr
-                        className="border-b border-border"
-                        style={{ background: "oklch(0.88 0.035 75)" }}
-                      >
-                        <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">
-                          Date
-                        </th>
-                        <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">
-                          Departure
-                        </th>
-                        <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">
-                          Destination
-                        </th>
-                        <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">
-                          km
-                        </th>
-                        <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">
-                          Note
-                        </th>
-                        <th className="px-3 py-2.5" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredEntries.map((entry, i) => (
-                        <tr
-                          key={entry.id.toString()}
-                          className="border-b border-border last:border-0 hover:bg-secondary/20 transition-colors"
-                          data-ocid={`log.item.${i + 1}`}
-                        >
-                          <td className="px-4 py-3 font-medium text-foreground whitespace-nowrap">
-                            {entry.date}
-                          </td>
-                          <td className="px-3 py-3 text-muted-foreground max-w-[100px] truncate">
-                            {entry.departure}
-                          </td>
-                          <td className="px-3 py-3 text-muted-foreground max-w-[100px] truncate">
-                            {entry.destination}
-                          </td>
-                          <td className="px-3 py-3 text-right font-medium text-foreground">
-                            {entry.distanceKm.toFixed(1)}
-                          </td>
-                          <td className="px-3 py-3 text-muted-foreground max-w-[120px] truncate">
-                            {entry.note ?? (
-                              <span className="italic opacity-50">—</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-3">
-                            <button
-                              type="button"
-                              onClick={() => setDeleteEntryConfirm(entry.id)}
-                              disabled={deleteEntryMutation.isPending}
-                              data-ocid={`log.delete_button.${i + 1}`}
-                              className="p-1.5 rounded transition-colors text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                              title="Delete entry"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
+            <HistoryPanel />
           </motion.div>
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="mt-12 pb-8 text-center">
+      {/* ── Mobile bottom tab bar ───────────────────────────────────────────── */}
+      <nav
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card"
+        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+        data-ocid="nav.tab"
+      >
+        <div className="flex items-stretch h-16">
+          {tabItems.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                data-ocid={`nav.${tab.id}.tab`}
+                className="flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-colors"
+                style={{
+                  color: isActive
+                    ? "oklch(0.38 0.09 175)"
+                    : "oklch(0.55 0.04 175)",
+                }}
+              >
+                <span
+                  className="flex items-center justify-center w-9 h-6 rounded-full transition-all"
+                  style={{
+                    background: isActive
+                      ? "oklch(0.38 0.09 175 / 0.1)"
+                      : "transparent",
+                  }}
+                >
+                  {tab.icon}
+                </span>
+                <span className="text-[10px] font-semibold leading-tight tracking-wide">
+                  {tab.label}
+                </span>
+                {/* Active indicator dot */}
+                {isActive && (
+                  <span
+                    className="absolute bottom-1 w-1 h-1 rounded-full"
+                    style={{ background: "oklch(0.38 0.09 175)" }}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
+      {/* ── Footer ─────────────────────────────────────────────────────────── */}
+      <footer className="hidden lg:block mt-12 pb-8 text-center">
         <p className="text-xs text-muted-foreground">
           © {new Date().getFullYear()}. Built with ❤️ using{" "}
           <a
@@ -633,14 +947,13 @@ export default function MainApp() {
         </p>
       </footer>
 
-      {/* Preset Management Modal */}
+      {/* ── Desktop: Preset Management Modal ───────────────────────────────── */}
       <Dialog open={presetModalOpen} onOpenChange={setPresetModalOpen}>
         <DialogContent className="max-w-md" data-ocid="presets.dialog">
           <DialogHeader>
             <DialogTitle>Manage Presets</DialogTitle>
           </DialogHeader>
 
-          {/* Existing presets */}
           <div className="space-y-2 max-h-48 overflow-y-auto">
             {presetsLoading ? (
               <Skeleton className="h-10 w-full" />
@@ -682,11 +995,11 @@ export default function MainApp() {
               New Preset
             </p>
             <div className="space-y-1.5">
-              <Label htmlFor="pname" className="text-xs">
+              <Label htmlFor="pname-modal" className="text-xs">
                 Preset Name
               </Label>
               <Input
-                id="pname"
+                id="pname-modal"
                 placeholder="e.g. West Harbour Delivery"
                 value={newPresetName}
                 onChange={(e) => setNewPresetName(e.target.value)}
@@ -696,11 +1009,11 @@ export default function MainApp() {
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1.5">
-                <Label htmlFor="pdep" className="text-xs">
+                <Label htmlFor="pdep-modal" className="text-xs">
                   Departure
                 </Label>
                 <Input
-                  id="pdep"
+                  id="pdep-modal"
                   placeholder="Departure"
                   value={newPresetDeparture}
                   onChange={(e) => setNewPresetDeparture(e.target.value)}
@@ -709,11 +1022,11 @@ export default function MainApp() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="pdest" className="text-xs">
+                <Label htmlFor="pdest-modal" className="text-xs">
                   Destination
                 </Label>
                 <Input
-                  id="pdest"
+                  id="pdest-modal"
                   placeholder="Destination"
                   value={newPresetDestination}
                   onChange={(e) => setNewPresetDestination(e.target.value)}
@@ -723,11 +1036,11 @@ export default function MainApp() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="pdist" className="text-xs">
+              <Label htmlFor="pdist-modal" className="text-xs">
                 Distance (km)
               </Label>
               <Input
-                id="pdist"
+                id="pdist-modal"
                 type="number"
                 min="0"
                 step="0.1"
@@ -769,7 +1082,7 @@ export default function MainApp() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Entry Confirmation Dialog */}
+      {/* ── Delete Entry Confirmation ───────────────────────────────────────── */}
       <AlertDialog
         open={deleteEntryConfirm !== null}
         onOpenChange={(open) => {
@@ -813,7 +1126,7 @@ export default function MainApp() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Delete Preset Confirmation Dialog */}
+      {/* ── Delete Preset Confirmation ──────────────────────────────────────── */}
       <AlertDialog
         open={deletePresetConfirm !== null}
         onOpenChange={(open) => {
