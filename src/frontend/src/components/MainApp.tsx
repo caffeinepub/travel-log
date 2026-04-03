@@ -28,7 +28,6 @@ import {
   Loader2,
   PenLine,
   Plus,
-  Settings2,
   Trash2,
   TreePine,
 } from "lucide-react";
@@ -39,14 +38,6 @@ import type { Preset, TravelEntry } from "../backend.d";
 import { useActor } from "../hooks/useActor";
 
 type MobileTab = "log" | "history" | "presets";
-
-type LocalPreset = {
-  id: bigint;
-  name: string;
-  departure: string;
-  destination: string;
-  distanceKm: number;
-};
 
 function getTodayDate(): string {
   return new Date().toISOString().split("T")[0];
@@ -87,194 +78,25 @@ function exportCSV(entries: TravelEntry[], from: string, to: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function MainApp() {
-  const { actor, isFetching } = useActor();
-  const qc = useQueryClient();
-
-  // Mobile tab state
-  const [activeTab, setActiveTab] = useState<MobileTab>("log");
-
-  // Form state
-  const [date, setDate] = useState(getTodayDate());
-  const [departure, setDeparture] = useState("");
-  const [destination, setDestination] = useState("");
-  const [distance, setDistance] = useState("");
-  const [note, setNote] = useState("");
-
-  // Filter state
-  const [filterFrom, setFilterFrom] = useState(getFourWeeksAgo());
-  const [filterTo, setFilterTo] = useState(getTodayDate());
-
-  // Desktop preset modal state
-  const [presetModalOpen, setPresetModalOpen] = useState(false);
-
-  // Preset form state
-  const [newPresetName, setNewPresetName] = useState("");
-  const [newPresetDeparture, setNewPresetDeparture] = useState("");
-  const [newPresetDestination, setNewPresetDestination] = useState("");
-  const [newPresetDistance, setNewPresetDistance] = useState("");
-
-  // Delete confirmation state
-  const [deleteEntryConfirm, setDeleteEntryConfirm] = useState<bigint | null>(
-    null,
-  );
-  const [deletePresetConfirm, setDeletePresetConfirm] = useState<bigint | null>(
-    null,
-  );
-
-  // Queries
-  const { data: entries = [], isLoading: entriesLoading } = useQuery<
-    TravelEntry[]
-  >({
-    queryKey: ["entries"],
-    queryFn: async () => {
-      if (!actor) return [];
-      return actor.getAllEntries();
-    },
-    enabled: !!actor && !isFetching,
-  });
-
-  const { data: presets = [], isLoading: presetsLoading } = useQuery<Preset[]>({
-    queryKey: ["presets"],
-    queryFn: async () => {
-      if (!actor) return [];
-      return actor.getAllPresets();
-    },
-    enabled: !!actor && !isFetching,
-  });
-
-  // Mutations
-  const addEntryMutation = useMutation({
-    mutationFn: () => {
-      if (!actor) throw new Error("Not connected");
-      return actor.addEntry(
-        date,
-        departure,
-        destination,
-        Number.parseFloat(distance),
-        note.trim() || null,
-      );
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["entries"] });
-      setDate(getTodayDate());
-      setDeparture("");
-      setDestination("");
-      setDistance("");
-      setNote("");
-      toast.success("Trip logged successfully!");
-    },
-    onError: () => {
-      toast.error("Failed to log trip. Please try again.");
-    },
-  });
-
-  const deleteEntryMutation = useMutation({
-    mutationFn: (id: bigint) => {
-      if (!actor) throw new Error("Not connected");
-      return actor.deleteEntry(id);
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["entries"] });
-      setDeleteEntryConfirm(null);
-      toast.success("Entry deleted.");
-    },
-    onError: () => {
-      toast.error("Failed to delete entry.");
-    },
-  });
-
-  const addPresetMutation = useMutation({
-    mutationFn: () => {
-      if (!actor) throw new Error("Not connected");
-      return actor.addPreset(
-        newPresetName,
-        newPresetDeparture,
-        newPresetDestination,
-        Number.parseFloat(newPresetDistance),
-      );
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["presets"] });
-      setNewPresetName("");
-      setNewPresetDeparture("");
-      setNewPresetDestination("");
-      setNewPresetDistance("");
-      toast.success("Preset saved!");
-    },
-    onError: () => {
-      toast.error("Failed to save preset.");
-    },
-  });
-
-  const deletePresetMutation = useMutation({
-    mutationFn: (id: bigint) => {
-      if (!actor) throw new Error("Not connected");
-      return actor.deletePreset(id);
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["presets"] });
-      setDeletePresetConfirm(null);
-      toast.success("Preset deleted.");
-    },
-  });
-
-  const applyPreset = (preset: LocalPreset) => {
-    setDeparture(preset.departure);
-    setDestination(preset.destination);
-    setDistance(preset.distanceKm.toString());
-  };
-
-  const filteredEntries = entries
-    .filter((e) => {
-      if (filterFrom && e.date < filterFrom) return false;
-      if (filterTo && e.date > filterTo) return false;
-      return true;
-    })
-    .sort((a, b) => (a.date < b.date ? 1 : -1));
-
-  const isFormValid =
-    date.trim() !== "" &&
-    departure.trim() !== "" &&
-    destination.trim() !== "" &&
-    distance !== "" &&
-    Number.parseFloat(distance) > 0;
-
-  const isPresetValid =
-    newPresetName.trim() !== "" &&
-    newPresetDeparture.trim() !== "" &&
-    newPresetDestination.trim() !== "" &&
-    newPresetDistance !== "" &&
-    Number.parseFloat(newPresetDistance) > 0;
-
-  // ─── Shared sub-sections ─────────────────────────────────────────────────
-
-  const PresetChips = ({ onManage }: { onManage?: () => void }) => (
+// ── Preset chips ──────────────────────────────────────────────────────────────
+function PresetChips({
+  presets,
+  onApply,
+}: {
+  presets: Preset[];
+  onApply: (p: Preset) => void;
+}) {
+  return (
     <div className="mb-5">
-      <div className="flex items-center justify-between mb-2">
-        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-          Quick Presets
-        </Label>
-        {onManage && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-xs hidden lg:flex"
-            onClick={onManage}
-            data-ocid="presets.open_modal_button"
-          >
-            <Settings2 className="w-3 h-3 mr-1" />
-            Manage
-          </Button>
-        )}
-      </div>
+      <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-2">
+        Quick Presets
+      </Label>
       <div className="flex flex-wrap gap-2" data-ocid="presets.list">
         {presets.map((p, i) => (
           <button
             type="button"
             key={p.id.toString()}
-            onClick={() => applyPreset(p)}
+            onClick={() => onApply(p)}
             data-ocid={`presets.item.${i + 1}`}
             className="px-3 py-1.5 text-xs font-medium rounded-full border transition-all hover:shadow-xs"
             style={{
@@ -297,62 +119,94 @@ export default function MainApp() {
       </div>
     </div>
   );
+}
 
-  const LogTripForm = ({
-    showPresetLink = false,
-  }: { showPresetLink?: boolean }) => (
+// ── Log Trip Form ─────────────────────────────────────────────────────────────
+function LogTripForm({
+  date,
+  setDate,
+  departure,
+  setDeparture,
+  destination,
+  setDestination,
+  distance,
+  setDistance,
+  note,
+  setNote,
+  presets,
+  presetsLoading,
+  isFormValid,
+  isPending,
+  actorReady,
+  onSubmit,
+  onApplyPreset,
+  onGoToPresetsTab,
+  showPresetLink,
+}: {
+  date: string;
+  setDate: (v: string) => void;
+  departure: string;
+  setDeparture: (v: string) => void;
+  destination: string;
+  setDestination: (v: string) => void;
+  distance: string;
+  setDistance: (v: string) => void;
+  note: string;
+  setNote: (v: string) => void;
+  presets: Preset[];
+  presetsLoading: boolean;
+  isFormValid: boolean;
+  isPending: boolean;
+  actorReady: boolean;
+  onSubmit: () => void;
+  onApplyPreset: (p: Preset) => void;
+  onGoToPresetsTab?: () => void;
+  showPresetLink?: boolean;
+}) {
+  return (
     <div className="space-y-4">
       {/* Quick Presets */}
       {!presetsLoading && presets.length > 0 && (
-        <PresetChips onManage={() => setPresetModalOpen(true)} />
+        <PresetChips presets={presets} onApply={onApplyPreset} />
       )}
 
-      {/* No presets — desktop shows Create button, mobile shows link to presets tab */}
+      {/* No presets yet */}
       {!presetsLoading && presets.length === 0 && (
         <div className="mb-5 flex items-center justify-between">
           <span className="text-xs text-muted-foreground">No presets yet</span>
-          {showPresetLink ? (
+          {showPresetLink && onGoToPresetsTab ? (
             <button
               type="button"
-              onClick={() => setActiveTab("presets")}
+              onClick={onGoToPresetsTab}
               className="text-xs font-semibold underline underline-offset-2"
               style={{ color: "oklch(0.38 0.09 175)" }}
               data-ocid="presets.tab.link"
             >
               + New Preset
             </button>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 px-3 text-xs"
-              onClick={() => setPresetModalOpen(true)}
-              data-ocid="presets.open_modal_button"
-            >
-              <Plus className="w-3 h-3 mr-1" />
-              Create Preset
-            </Button>
-          )}
+          ) : null}
         </div>
       )}
 
       {/* If presets exist on mobile, show link to presets tab */}
-      {showPresetLink && !presetsLoading && presets.length > 0 && (
-        <div className="flex justify-end -mt-3 mb-2">
-          <button
-            type="button"
-            onClick={() => setActiveTab("presets")}
-            className="text-xs font-semibold underline underline-offset-2"
-            style={{ color: "oklch(0.38 0.09 175)" }}
-            data-ocid="presets.tab.link"
-          >
-            + New Preset
-          </button>
-        </div>
-      )}
+      {showPresetLink &&
+        !presetsLoading &&
+        presets.length > 0 &&
+        onGoToPresetsTab && (
+          <div className="flex justify-end -mt-3 mb-2">
+            <button
+              type="button"
+              onClick={onGoToPresetsTab}
+              className="text-xs font-semibold underline underline-offset-2"
+              style={{ color: "oklch(0.38 0.09 175)" }}
+              data-ocid="presets.tab.link"
+            >
+              + New Preset
+            </button>
+          </div>
+        )}
 
-      {/* Date + Distance — stacked on mobile */}
+      {/* Date + Distance */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="date" className="text-xs font-medium">
@@ -385,7 +239,7 @@ export default function MainApp() {
         </div>
       </div>
 
-      {/* Departure + Destination — stacked on mobile */}
+      {/* Departure + Destination */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="departure" className="text-xs font-medium">
@@ -437,11 +291,11 @@ export default function MainApp() {
       <Button
         type="button"
         className="w-full h-11 rounded-full font-semibold text-sm"
-        disabled={!isFormValid || addEntryMutation.isPending || !actor}
-        onClick={() => addEntryMutation.mutate()}
+        disabled={!isFormValid || isPending || !actorReady}
+        onClick={onSubmit}
         data-ocid="entry.submit_button"
       >
-        {addEntryMutation.isPending ? (
+        {isPending ? (
           <>
             <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Logging...
           </>
@@ -451,10 +305,32 @@ export default function MainApp() {
       </Button>
     </div>
   );
+}
 
-  const HistoryPanel = () => (
+// ── History Panel ─────────────────────────────────────────────────────────────
+function HistoryPanel({
+  entries,
+  filteredEntries,
+  entriesLoading,
+  filterFrom,
+  setFilterFrom,
+  filterTo,
+  setFilterTo,
+  onDeleteRequest,
+  deleteIsPending,
+}: {
+  entries: TravelEntry[];
+  filteredEntries: TravelEntry[];
+  entriesLoading: boolean;
+  filterFrom: string;
+  setFilterFrom: (v: string) => void;
+  filterTo: string;
+  setFilterTo: (v: string) => void;
+  onDeleteRequest: (id: bigint) => void;
+  deleteIsPending: boolean;
+}) {
+  return (
     <div className="bg-card border border-border rounded-lg shadow-card">
-      {/* Card header */}
       <div className="flex items-center justify-between px-4 py-4 border-b border-border">
         <div>
           <h2 className="text-base font-bold text-foreground">Travel Log</h2>
@@ -584,8 +460,8 @@ export default function MainApp() {
                   <td className="px-3 py-3">
                     <button
                       type="button"
-                      onClick={() => setDeleteEntryConfirm(entry.id)}
-                      disabled={deleteEntryMutation.isPending}
+                      onClick={() => onDeleteRequest(entry.id)}
+                      disabled={deleteIsPending}
                       data-ocid={`log.delete_button.${i + 1}`}
                       className="p-1.5 rounded transition-colors text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                       title="Delete entry"
@@ -601,8 +477,45 @@ export default function MainApp() {
       </div>
     </div>
   );
+}
 
-  const PresetsPanel = () => (
+// ── Presets Panel ─────────────────────────────────────────────────────────────
+function PresetsPanel({
+  presets,
+  presetsLoading,
+  newPresetName,
+  setNewPresetName,
+  newPresetDeparture,
+  setNewPresetDeparture,
+  newPresetDestination,
+  setNewPresetDestination,
+  newPresetDistance,
+  setNewPresetDistance,
+  isPresetValid,
+  isSavingPreset,
+  actorReady,
+  onSavePreset,
+  onDeleteRequest,
+  deleteIsPending,
+}: {
+  presets: Preset[];
+  presetsLoading: boolean;
+  newPresetName: string;
+  setNewPresetName: (v: string) => void;
+  newPresetDeparture: string;
+  setNewPresetDeparture: (v: string) => void;
+  newPresetDestination: string;
+  setNewPresetDestination: (v: string) => void;
+  newPresetDistance: string;
+  setNewPresetDistance: (v: string) => void;
+  isPresetValid: boolean;
+  isSavingPreset: boolean;
+  actorReady: boolean;
+  onSavePreset: () => void;
+  onDeleteRequest: (id: bigint) => void;
+  deleteIsPending: boolean;
+}) {
+  return (
     <div className="space-y-4">
       {/* Existing presets list */}
       <div className="bg-card border border-border rounded-lg shadow-card">
@@ -645,8 +558,8 @@ export default function MainApp() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setDeletePresetConfirm(p.id)}
-                    disabled={deletePresetMutation.isPending}
+                    onClick={() => onDeleteRequest(p.id)}
+                    disabled={deleteIsPending}
                     data-ocid={`presets.delete_button.${i + 1}`}
                     className="ml-3 p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors flex-shrink-0"
                     title="Delete preset"
@@ -660,7 +573,7 @@ export default function MainApp() {
         </div>
       </div>
 
-      {/* Create Preset form — always visible */}
+      {/* Create Preset form */}
       <div
         className="bg-card border-2 rounded-lg shadow-card"
         style={{ borderColor: "oklch(0.38 0.09 175 / 0.35)" }}
@@ -760,11 +673,11 @@ export default function MainApp() {
           <Button
             type="button"
             className="w-full h-11 rounded-full font-semibold text-sm mt-1"
-            onClick={() => addPresetMutation.mutate()}
-            disabled={!isPresetValid || addPresetMutation.isPending || !actor}
+            onClick={onSavePreset}
+            disabled={!isPresetValid || isSavingPreset || !actorReady}
             data-ocid="presets.save_button"
           >
-            {addPresetMutation.isPending ? (
+            {isSavingPreset ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...
               </>
@@ -776,8 +689,170 @@ export default function MainApp() {
       </div>
     </div>
   );
+}
 
-  // ─── Bottom nav tab helper ────────────────────────────────────────────────
+// ── Main App ──────────────────────────────────────────────────────────────────
+export default function MainApp() {
+  const { actor, isFetching } = useActor();
+  const qc = useQueryClient();
+
+  const [activeTab, setActiveTab] = useState<MobileTab>("log");
+
+  // Log trip form state
+  const [date, setDate] = useState(getTodayDate());
+  const [departure, setDeparture] = useState("");
+  const [destination, setDestination] = useState("");
+  const [distance, setDistance] = useState("");
+  const [note, setNote] = useState("");
+
+  // Filter state
+  const [filterFrom, setFilterFrom] = useState(getFourWeeksAgo());
+  const [filterTo, setFilterTo] = useState(getTodayDate());
+
+  // Desktop preset modal state
+  const [presetModalOpen, setPresetModalOpen] = useState(false);
+
+  // Preset form state
+  const [newPresetName, setNewPresetName] = useState("");
+  const [newPresetDeparture, setNewPresetDeparture] = useState("");
+  const [newPresetDestination, setNewPresetDestination] = useState("");
+  const [newPresetDistance, setNewPresetDistance] = useState("");
+
+  // Delete confirmation state
+  const [deleteEntryConfirm, setDeleteEntryConfirm] = useState<bigint | null>(
+    null,
+  );
+  const [deletePresetConfirm, setDeletePresetConfirm] = useState<bigint | null>(
+    null,
+  );
+
+  // Queries
+  const { data: entries = [], isLoading: entriesLoading } = useQuery<
+    TravelEntry[]
+  >({
+    queryKey: ["entries"],
+    queryFn: async () => {
+      if (!actor) return [];
+      return actor.getAllEntries();
+    },
+    enabled: !!actor && !isFetching,
+  });
+
+  const { data: presets = [], isLoading: presetsLoading } = useQuery<Preset[]>({
+    queryKey: ["presets"],
+    queryFn: async () => {
+      if (!actor) return [];
+      return actor.getAllPresets();
+    },
+    enabled: !!actor && !isFetching,
+  });
+
+  // Mutations
+  const addEntryMutation = useMutation({
+    mutationFn: () => {
+      if (!actor) throw new Error("Not connected");
+      return actor.addEntry(
+        date,
+        departure,
+        destination,
+        Number.parseFloat(distance),
+        note.trim() || null,
+      );
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["entries"] });
+      setDate(getTodayDate());
+      setDeparture("");
+      setDestination("");
+      setDistance("");
+      setNote("");
+      toast.success("Trip logged successfully!");
+    },
+    onError: () => {
+      toast.error("Failed to log trip. Please try again.");
+    },
+  });
+
+  const deleteEntryMutation = useMutation({
+    mutationFn: (id: bigint) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.deleteEntry(id);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["entries"] });
+      setDeleteEntryConfirm(null);
+      toast.success("Entry deleted.");
+    },
+    onError: () => {
+      toast.error("Failed to delete entry.");
+    },
+  });
+
+  const addPresetMutation = useMutation({
+    mutationFn: () => {
+      if (!actor) throw new Error("Not connected");
+      return actor.addPreset(
+        newPresetName,
+        newPresetDeparture,
+        newPresetDestination,
+        Number.parseFloat(newPresetDistance),
+      );
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["presets"] });
+      setNewPresetName("");
+      setNewPresetDeparture("");
+      setNewPresetDestination("");
+      setNewPresetDistance("");
+      setPresetModalOpen(false);
+      toast.success("Preset saved!");
+    },
+    onError: () => {
+      toast.error("Failed to save preset.");
+    },
+  });
+
+  const deletePresetMutation = useMutation({
+    mutationFn: (id: bigint) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.deletePreset(id);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["presets"] });
+      setDeletePresetConfirm(null);
+      toast.success("Preset deleted.");
+    },
+  });
+
+  const applyPreset = (preset: Preset) => {
+    setDeparture(preset.departure);
+    setDestination(preset.destination);
+    setDistance(preset.distanceKm.toString());
+    setActiveTab("log");
+  };
+
+  const filteredEntries = entries
+    .filter((e) => {
+      if (filterFrom && e.date < filterFrom) return false;
+      if (filterTo && e.date > filterTo) return false;
+      return true;
+    })
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  const isFormValid =
+    date.trim() !== "" &&
+    departure.trim() !== "" &&
+    destination.trim() !== "" &&
+    distance !== "" &&
+    Number.parseFloat(distance) > 0;
+
+  const isPresetValid =
+    newPresetName.trim() !== "" &&
+    newPresetDeparture.trim() !== "" &&
+    newPresetDestination.trim() !== "" &&
+    newPresetDistance !== "" &&
+    Number.parseFloat(newPresetDistance) > 0;
+
   const tabItems: { id: MobileTab; label: string; icon: React.ReactNode }[] = [
     { id: "log", label: "Log Trip", icon: <PenLine className="w-5 h-5" /> },
     {
@@ -790,7 +865,7 @@ export default function MainApp() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      {/* Header */}
       <header
         className="sticky top-0 z-40 w-full border-b border-border bg-card shadow-xs"
         data-ocid="nav.section"
@@ -809,7 +884,7 @@ export default function MainApp() {
         </div>
       </header>
 
-      {/* ── Mobile layout: tab content ─────────────────────────────────────── */}
+      {/* Mobile layout */}
       <main className="lg:hidden max-w-2xl mx-auto px-4 pt-5 pb-28">
         {activeTab === "log" && (
           <motion.div
@@ -825,7 +900,27 @@ export default function MainApp() {
               <p className="text-xs text-muted-foreground mb-5">
                 Record a trip for your tax records.
               </p>
-              <LogTripForm showPresetLink />
+              <LogTripForm
+                date={date}
+                setDate={setDate}
+                departure={departure}
+                setDeparture={setDeparture}
+                destination={destination}
+                setDestination={setDestination}
+                distance={distance}
+                setDistance={setDistance}
+                note={note}
+                setNote={setNote}
+                presets={presets}
+                presetsLoading={presetsLoading}
+                isFormValid={isFormValid}
+                isPending={addEntryMutation.isPending}
+                actorReady={!!actor}
+                onSubmit={() => addEntryMutation.mutate()}
+                onApplyPreset={applyPreset}
+                onGoToPresetsTab={() => setActiveTab("presets")}
+                showPresetLink
+              />
             </div>
           </motion.div>
         )}
@@ -837,7 +932,17 @@ export default function MainApp() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
           >
-            <HistoryPanel />
+            <HistoryPanel
+              entries={entries}
+              filteredEntries={filteredEntries}
+              entriesLoading={entriesLoading}
+              filterFrom={filterFrom}
+              setFilterFrom={setFilterFrom}
+              filterTo={filterTo}
+              setFilterTo={setFilterTo}
+              onDeleteRequest={setDeleteEntryConfirm}
+              deleteIsPending={deleteEntryMutation.isPending}
+            />
           </motion.div>
         )}
 
@@ -848,15 +953,31 @@ export default function MainApp() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
           >
-            <PresetsPanel />
+            <PresetsPanel
+              presets={presets}
+              presetsLoading={presetsLoading}
+              newPresetName={newPresetName}
+              setNewPresetName={setNewPresetName}
+              newPresetDeparture={newPresetDeparture}
+              setNewPresetDeparture={setNewPresetDeparture}
+              newPresetDestination={newPresetDestination}
+              setNewPresetDestination={setNewPresetDestination}
+              newPresetDistance={newPresetDistance}
+              setNewPresetDistance={setNewPresetDistance}
+              isPresetValid={isPresetValid}
+              isSavingPreset={addPresetMutation.isPending}
+              actorReady={!!actor}
+              onSavePreset={() => addPresetMutation.mutate()}
+              onDeleteRequest={setDeletePresetConfirm}
+              deleteIsPending={deletePresetMutation.isPending}
+            />
           </motion.div>
         )}
       </main>
 
-      {/* ── Desktop layout: two columns ────────────────────────────────────── */}
+      {/* Desktop layout */}
       <main className="hidden lg:block max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-          {/* LEFT: New Entry Form */}
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
@@ -869,22 +990,49 @@ export default function MainApp() {
               <p className="text-sm text-muted-foreground mb-5">
                 Record a trip for your tax records.
               </p>
-              <LogTripForm />
+              <LogTripForm
+                date={date}
+                setDate={setDate}
+                departure={departure}
+                setDeparture={setDeparture}
+                destination={destination}
+                setDestination={setDestination}
+                distance={distance}
+                setDistance={setDistance}
+                note={note}
+                setNote={setNote}
+                presets={presets}
+                presetsLoading={presetsLoading}
+                isFormValid={isFormValid}
+                isPending={addEntryMutation.isPending}
+                actorReady={!!actor}
+                onSubmit={() => addEntryMutation.mutate()}
+                onApplyPreset={applyPreset}
+              />
             </div>
           </motion.div>
 
-          {/* RIGHT: Travel History */}
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35, ease: "easeOut", delay: 0.08 }}
           >
-            <HistoryPanel />
+            <HistoryPanel
+              entries={entries}
+              filteredEntries={filteredEntries}
+              entriesLoading={entriesLoading}
+              filterFrom={filterFrom}
+              setFilterFrom={setFilterFrom}
+              filterTo={filterTo}
+              setFilterTo={setFilterTo}
+              onDeleteRequest={setDeleteEntryConfirm}
+              deleteIsPending={deleteEntryMutation.isPending}
+            />
           </motion.div>
         </div>
       </main>
 
-      {/* ── Mobile bottom tab bar ───────────────────────────────────────────── */}
+      {/* Mobile bottom tab bar */}
       <nav
         className="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
@@ -919,7 +1067,6 @@ export default function MainApp() {
                 <span className="text-[10px] font-semibold leading-tight tracking-wide">
                   {tab.label}
                 </span>
-                {/* Active indicator dot */}
                 {isActive && (
                   <span
                     className="absolute bottom-1 w-1 h-1 rounded-full"
@@ -932,7 +1079,7 @@ export default function MainApp() {
         </div>
       </nav>
 
-      {/* ── Footer ─────────────────────────────────────────────────────────── */}
+      {/* Footer */}
       <footer className="hidden lg:block mt-12 pb-8 text-center">
         <p className="text-xs text-muted-foreground">
           © {new Date().getFullYear()}. Built with ❤️ using{" "}
@@ -947,7 +1094,7 @@ export default function MainApp() {
         </p>
       </footer>
 
-      {/* ── Desktop: Preset Management Modal ───────────────────────────────── */}
+      {/* Desktop: Preset Management Modal */}
       <Dialog open={presetModalOpen} onOpenChange={setPresetModalOpen}>
         <DialogContent className="max-w-md" data-ocid="presets.dialog">
           <DialogHeader>
@@ -1004,7 +1151,6 @@ export default function MainApp() {
                 value={newPresetName}
                 onChange={(e) => setNewPresetName(e.target.value)}
                 className="h-8 text-sm"
-                data-ocid="presets.name.input"
               />
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -1018,7 +1164,6 @@ export default function MainApp() {
                   value={newPresetDeparture}
                   onChange={(e) => setNewPresetDeparture(e.target.value)}
                   className="h-8 text-sm"
-                  data-ocid="presets.departure.input"
                 />
               </div>
               <div className="space-y-1.5">
@@ -1031,7 +1176,6 @@ export default function MainApp() {
                   value={newPresetDestination}
                   onChange={(e) => setNewPresetDestination(e.target.value)}
                   className="h-8 text-sm"
-                  data-ocid="presets.destination.input"
                 />
               </div>
             </div>
@@ -1048,7 +1192,6 @@ export default function MainApp() {
                 value={newPresetDistance}
                 onChange={(e) => setNewPresetDistance(e.target.value)}
                 className="h-8 text-sm"
-                data-ocid="presets.distance.input"
               />
             </div>
           </div>
@@ -1059,7 +1202,6 @@ export default function MainApp() {
               variant="outline"
               onClick={() => setPresetModalOpen(false)}
               className="text-sm"
-              data-ocid="presets.cancel_button"
             >
               Close
             </Button>
@@ -1068,7 +1210,6 @@ export default function MainApp() {
               onClick={() => addPresetMutation.mutate()}
               disabled={!isPresetValid || addPresetMutation.isPending || !actor}
               className="text-sm"
-              data-ocid="presets.save_button"
             >
               {addPresetMutation.isPending ? (
                 <>
@@ -1082,7 +1223,7 @@ export default function MainApp() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Delete Entry Confirmation ───────────────────────────────────────── */}
+      {/* Delete Entry Confirmation */}
       <AlertDialog
         open={deleteEntryConfirm !== null}
         onOpenChange={(open) => {
@@ -1098,21 +1239,16 @@ export default function MainApp() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => setDeleteEntryConfirm(null)}
-              data-ocid="log.delete_entry.cancel_button"
-            >
+            <AlertDialogCancel onClick={() => setDeleteEntryConfirm(null)}>
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                if (deleteEntryConfirm !== null) {
+                if (deleteEntryConfirm !== null)
                   deleteEntryMutation.mutate(deleteEntryConfirm);
-                }
               }}
               disabled={deleteEntryMutation.isPending}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              data-ocid="log.delete_entry.confirm_button"
             >
               {deleteEntryMutation.isPending ? (
                 <>
@@ -1126,7 +1262,7 @@ export default function MainApp() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ── Delete Preset Confirmation ──────────────────────────────────────── */}
+      {/* Delete Preset Confirmation */}
       <AlertDialog
         open={deletePresetConfirm !== null}
         onOpenChange={(open) => {
@@ -1142,21 +1278,16 @@ export default function MainApp() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => setDeletePresetConfirm(null)}
-              data-ocid="presets.delete_preset.cancel_button"
-            >
+            <AlertDialogCancel onClick={() => setDeletePresetConfirm(null)}>
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                if (deletePresetConfirm !== null) {
+                if (deletePresetConfirm !== null)
                   deletePresetMutation.mutate(deletePresetConfirm);
-                }
               }}
               disabled={deletePresetMutation.isPending}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              data-ocid="presets.delete_preset.confirm_button"
             >
               {deletePresetMutation.isPending ? (
                 <>

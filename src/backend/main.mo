@@ -58,7 +58,7 @@ actor {
     if (not entries.containsKey(id)) {
       Runtime.trap("Entry not found");
     };
-    entries.remove(id);
+    ignore entries.remove(id);
   };
 
   public query func getAllEntries() : async [TravelEntry] {
@@ -82,7 +82,7 @@ actor {
     if (not presets.containsKey(id)) {
       Runtime.trap("Preset not found");
     };
-    presets.remove(id);
+    ignore presets.remove(id);
   };
 
   public query func getAllPresets() : async [Preset] {
